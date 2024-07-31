@@ -26,10 +26,18 @@ bool hasRealtimeKernel() {
 #ifdef LIBFRANKA_WINDOWS
   return true;
 #else
+  // Check for realtime kernel
   std::ifstream realtime("/sys/kernel/realtime", std::ios_base::in);
   bool is_realtime;
   realtime >> is_realtime;
-  return is_realtime;
+  if (is_realtime) {
+    return true;
+  }
+  // Also check for lowlatency kernel
+  std::ifstream os_release("/proc/sys/kernel/osrelease", std::ios_base::in);
+  std::string os_release_string;
+  os_release >> os_release_string;
+  return os_release_string.find("lowlatency") != std::string::npos;
 #endif
 }
 
