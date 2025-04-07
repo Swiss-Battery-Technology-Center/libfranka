@@ -5,6 +5,7 @@
 #include <sstream>
 
 #include <franka/control_tools.h>
+#include <franka/logging/logger.hpp>
 
 #include "load_calculations.h"
 
@@ -86,10 +87,6 @@ void Robot::Impl::throwOnMotionError(const RobotState& robot_state, uint32_t mot
 }
 
 RobotState Robot::Impl::readOnce() {
-  // Delete old data from the UDP buffer.
-  research_interface::robot::RobotState robot_state;
-  while (network_->udpReceive<decltype(robot_state)>(&robot_state)) {
-  }
   current_state_ = convertRobotState(receiveRobotState());
   return current_state_;
 }
@@ -391,6 +388,11 @@ research_interface::robot::ControllerCommand Robot::Impl::createControllerComman
 }
 
 void Robot::Impl::cancelMotion(uint32_t motion_id) {
+  if (!network_->isTcpSocketAlive()) {
+    logging::logWarn("libfranka robot: TCP connection is closed. Cannot cancel motion.");
+    return;
+  }
+
   try {
     executeCommand<research_interface::robot::StopMove>();
   } catch (const CommandException& e) {

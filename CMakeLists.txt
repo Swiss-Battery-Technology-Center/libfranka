@@ -1,13 +1,23 @@
-cmake_minimum_required(VERSION 3.4)
+cmake_minimum_required(VERSION 3.11)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-set(libfranka_VERSION 0.13.4)
+set(libfranka_VERSION 0.15.0)
 
 project(libfranka
   VERSION ${libfranka_VERSION}
   LANGUAGES CXX
 )
+
+option(BUILD_DOCUMENTATION "Build documentation" OFF)
+option(SKIP_CXX_BUILD "Skips the c++ build" OFF)
+if(BUILD_DOCUMENTATION)
+  add_subdirectory(doc)
+
+  if(SKIP_CXX_BUILD)
+    return()
+  endif()
+endif()
 
 list(INSERT CMAKE_MODULE_PATH 0 "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
@@ -62,6 +72,9 @@ if(BUILD_COVERAGE)
   set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --coverage")
 endif()
 
+## Load dependencies
+include(FetchFMT)
+
 ## Submodules
 add_subdirectory(common)
 
@@ -81,8 +94,6 @@ add_library(franka SHARED
   src/library_downloader.cpp
   src/library_loader.cpp
   src/load_calculations.cpp
-  src/log.cpp
-  src/logger.cpp
   src/lowpass_filter.cpp
   src/model.cpp
   src/model_library.cpp
@@ -94,6 +105,11 @@ add_library(franka SHARED
   src/vacuum_gripper.cpp
   src/vacuum_gripper_state.cpp
   src/robot_model.cpp
+
+  src/logging/cout_logging_sink.cpp
+  src/logging/logger.cpp
+  src/logging/robot_state_log.cpp
+  src/logging/robot_state_logger.cpp
 )
 add_library(Franka::Franka ALIAS franka)
 
@@ -134,6 +150,7 @@ target_link_libraries(franka PRIVATE
 
 target_link_libraries(franka PUBLIC
   libfranka-common
+  fmt::fmt
 )
 
 ## Installation
@@ -190,11 +207,6 @@ if(BUILD_EXAMPLES)
   add_subdirectory(examples)
 endif()
 
-option(BUILD_DOCUMENTATION "Build documentation" OFF)
-if(BUILD_DOCUMENTATION)
-  add_subdirectory(doc)
-endif()
-
 ## Packaging
 set(CPACK_PACKAGE_VENDOR "Franka Robotics GmbH")
 set(CPACK_GENERATOR "DEB;TGZ")
@@ -204,8 +216,8 @@ set(CPACK_SYSTEM_NAME ${CMAKE_HOST_SYSTEM_PROCESSOR})
 # Debian versions require a dash
 set(CPACK_DEBIAN_PACKAGE_VERSION ${CPACK_PACKAGE_VERSION}-1)
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Franka Robotics GmbH")
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "libpoco-dev")
-set(CPACK_DEBIAN_PACKAGE_CONFLICTS "ros-kinetic-libfranka, ros-melodic-libfranka, ros-noetic-libfranka, ros-foxy-libfranka")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libpoco-dev, libfmt-dev, libeigen3-dev")
+set(CPACK_DEBIAN_PACKAGE_CONFLICTS "ros-kinetic-libfranka, ros-melodic-libfranka, ros-noetic-libfranka, ros-foxy-libfranka, ros-humble-libfranka")
 include(CPack)
 
 ## Tools
@@ -228,7 +240,7 @@ file(GLOB_RECURSE TIDY_IGNORED_FILES
   src/libfcimodels.h
 )
 
-find_program(CLANG_FORMAT_PROG clang-format-6.0 DOC "'clang-format' executable")
+find_program(CLANG_FORMAT_PROG clang-format DOC "'clang-format' executable")
 if(CLANG_FORMAT_PROG)
   add_custom_target(format
     COMMAND ${CLANG_FORMAT_PROG} -i ${SOURCES} ${HEADERS} ${TEST_FILES}
@@ -243,10 +255,10 @@ if(CLANG_FORMAT_PROG)
     VERBATIM
   )
 else(CLANG_FORMAT_PROG)
-  MESSAGE(WARNING "Could not find clang-format-6.0")
+  MESSAGE(WARNING "Could not find clang-format")
 endif()
 
-find_program(CLANG_TIDY_PROG clang-tidy-6.0 DOC "'clang-tidy' executable")
+find_program(CLANG_TIDY_PROG clang-tidy DOC "'clang-tidy' executable")
 if(CLANG_TIDY_PROG)
   # Build JSON string for clang-tidy's line filter
   set(TIDY_FILES ${SOURCES} ${HEADERS})
@@ -271,5 +283,5 @@ if(CLANG_TIDY_PROG)
     VERBATIM
   )
 else(CLANG_TIDY_PROG)
-  MESSAGE(WARNING "Could not find clang-tidy-6.0")
+  MESSAGE(WARNING "Could not find clang-tidy")
 endif()
