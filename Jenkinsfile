@@ -23,13 +23,13 @@ pipeline {
       matrix {
         agent {
           dockerfile {
-            filename ".ci/Dockerfile.${env.DISTRO}"
-            args '-e PATH=/opt/openrobots/bin:$PATH ' +
-                '-e PKG_CONFIG_PATH=/opt/openrobots/lib/pkgconfig:$PKG_CONFIG_PATH ' +
-                '-e LD_LIBRARY_PATH=/opt/openrobots/lib:$LD_LIBRARY_PATH ' +
-                '-e PYTHONPATH=/opt/openrobots/lib/python3.10/site-packages:$PYTHONPATH ' +
-                '-e CMAKE_PREFIX_PATH=/opt/openrobots:$CMAKE_PREFIX_PATH'
+            dir ".ci"
+            filename "Dockerfile.${env.DISTRO}"
             reuseNode true
+            args '--privileged ' +
+                 '--cap-add=SYS_PTRACE ' +
+                 '--security-opt seccomp=unconfined ' +
+                 '--shm-size=2g '
          }
         }
         axes {
@@ -62,7 +62,8 @@ pipeline {
                   dir("build-debug.${env.DISTRO}") {
                     sh '''
                       cmake -DCMAKE_BUILD_TYPE=Debug -DSTRICT=ON -DBUILD_COVERAGE=OFF \
-                            -DBUILD_DOCUMENTATION=OFF -DBUILD_EXAMPLES=ON -DBUILD_TESTS=ON ..
+                            -DBUILD_DOCUMENTATION=OFF -DBUILD_EXAMPLES=ON -DBUILD_TESTS=ON \
+                            -DGENERATE_PYLIBFRANKA=ON ..
                       make -j$(nproc)
                     '''
                   }
@@ -73,7 +74,8 @@ pipeline {
                   dir("build-release.${env.DISTRO}") {
                     sh '''
                       cmake -DCMAKE_BUILD_TYPE=Release -DSTRICT=ON -DBUILD_COVERAGE=OFF \
-                            -DBUILD_DOCUMENTATION=ON -DBUILD_EXAMPLES=ON -DBUILD_TESTS=ON ..
+                            -DBUILD_DOCUMENTATION=ON -DBUILD_EXAMPLES=ON -DBUILD_TESTS=ON \
+                            -DGENERATE_PYLIBFRANKA=ON ..
                       make -j$(nproc)
                     '''
                   }
@@ -82,7 +84,7 @@ pipeline {
               stage('Build examples (debug)') {
                 steps {
                   dir("build-debug-examples.${env.DISTRO}") {
-                    sh "cmake -DFranka_DIR:PATH=../build-debug.${DISTRO} ../examples"
+                    sh "cmake -DFranka_DIR:PATH=../build-debug.${env.DISTRO} ../examples"
                     sh 'make -j$(nproc)'
                   }
                 }
@@ -90,7 +92,7 @@ pipeline {
               stage('Build examples (release)') {
                 steps {
                   dir("build-release-examples.${env.DISTRO}") {
-                    sh "cmake -DFranka_DIR:PATH=../build-release.${DISTRO} ../examples"
+                    sh "cmake -DFranka_DIR:PATH=../build-release.${env.DISTRO} ../examples"
                     sh 'make -j$(nproc)'
                   }
                 }
@@ -153,11 +155,34 @@ pipeline {
           stage('Test') {
             steps {
               catchError(buildResult: env.UNSTABLE, stageResult: env.UNSTABLE) {
-                dir("build-debug.${env.DISTRO}") {
-                  sh 'ctest -V'
-                }
-                dir("build-release.${env.DISTRO}") {
-                  sh 'ctest -V'
+                                timeout(time: 300, unit: 'SECONDS') {
+                  sh '''
+                    # ASLR Fix: Disable ASLR temporarily for ASan compatibility
+                    echo "[Debug Tests] Disabling ASLR for ASan compatibility..."
+                    echo 0 | sudo tee /proc/sys/kernel/randomize_va_space || echo "Could not disable ASLR"
+                    echo "[Debug Tests] ASLR status: $(cat /proc/sys/kernel/randomize_va_space)"
+                  '''
+
+                  dir("build-debug.${env.DISTRO}") {
+                    sh '''
+                      echo "[Debug Tests] Running tests..."
+                      ctest -V
+                    '''
+                  }
+
+                  dir("build-release.${env.DISTRO}") {
+                    sh '''
+                      echo "[Release Tests] Running tests..."
+                      ctest -V
+                    '''
+                  }
+
+                  sh '''
+                    # Re-enable ASLR for security
+                    echo "[Debug Tests] Re-enabling ASLR..."
+                    echo 2 | sudo tee /proc/sys/kernel/randomize_va_space || echo "Could not re-enable ASLR"
+                    echo "[Debug Tests] ASLR restored to: $(cat /proc/sys/kernel/randomize_va_space)"
+                  '''
                 }
               }
             }
@@ -172,7 +197,7 @@ pipeline {
           }
           stage('Check Github Sync') {
             steps {
-              sh '.ci/checkgithistory.sh https://github.com/frankaemika/libfranka.git develop'
+              sh '.ci/checkgithistory.sh https://github.com/frankarobotics/libfranka.git develop'
             }
           }
           stage('Publish') {
@@ -180,18 +205,57 @@ pipeline {
               dir("build-release.${env.DISTRO}") {
                 catchError(buildResult: env.UNSTABLE, stageResult: env.UNSTABLE) {
                   sh 'cpack'
+
+                  // Publish Debian packages with Git commit hash in the name
                   fePublishDebian('*.deb', 'fci', "deb.distribution=${env.DISTRO};deb.component=main;deb.architecture=amd64")
+
                   dir('doc') {
                     sh 'mv docs/*/html/ html/'
                     sh 'tar cfz ../libfranka-docs.tar.gz html'
                   }
-                  sh "rename -e 's/(.tar.gz|.deb)\$/-${env.DISTRO}\$1/' *.deb *.tar.gz"
+                  sh "rename -e 's/(.tar.gz)\$/-${env.DISTRO}\$1/' *.tar.gz"
                   publishHTML([allowMissing: false,
-                            alwaysLinkToLastBuild: false,
-                            keepAll: true,
-                            reportDir: 'doc/html',
-                            reportFiles: 'index.html',
-                            reportName: "API Documentation (${env.DISTRO})"])
+                              alwaysLinkToLastBuild: false,
+                              keepAll: true,
+                              reportDir: 'doc/html',
+                              reportFiles: 'index.html',
+                              reportName: "API Documentation (${env.DISTRO})"])
+                }
+              }
+
+              // Build and publish pylibfranka documentation
+              catchError(buildResult: env.UNSTABLE, stageResult: env.UNSTABLE) {
+                sh '''
+                  # Install pylibfranka from root (builds against libfranka in build-release.focal)
+                  export LD_LIBRARY_PATH="${WORKSPACE}/build-release.${DISTRO}:${LD_LIBRARY_PATH:-}"
+                  pip3 install . --user
+                '''
+
+                dir('pylibfranka/docs') {
+                  sh '''
+                    # Add sphinx to PATH
+                    export PATH="$HOME/.local/bin:$PATH"
+
+                    # Install Sphinx and dependencies
+                    pip3 install -r requirements.txt --user
+
+                    # Set locale
+                    export LC_ALL=C.UTF-8
+                    export LANG=C.UTF-8
+
+                    # Add libfranka to library path
+                    export LD_LIBRARY_PATH="${WORKSPACE}/build-release.${DISTRO}:${LD_LIBRARY_PATH:-}"
+
+                    # Build the documentation
+                    make html
+                  '''
+
+                  publishHTML([allowMissing: false,
+                              alwaysLinkToLastBuild: false,
+                              keepAll: true,
+                              reportDir: '_build/html',
+                              reportFiles: 'index.html',
+                              reportName: "pylibfranka Documentation (${env.DISTRO})"])
                 }
               }
             }

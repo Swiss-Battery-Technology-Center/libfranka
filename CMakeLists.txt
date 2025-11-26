@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.11)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-set(libfranka_VERSION 0.15.0)
+set(libfranka_VERSION 0.18.0)
 
 project(libfranka
   VERSION ${libfranka_VERSION}
@@ -11,6 +11,7 @@ project(libfranka
 
 option(BUILD_DOCUMENTATION "Build documentation" OFF)
 option(SKIP_CXX_BUILD "Skips the c++ build" OFF)
+option(GENERATE_PYLIBFRANKA "Generate the python bindings for libfranka" OFF)
 if(BUILD_DOCUMENTATION)
   add_subdirectory(doc)
 
@@ -47,9 +48,11 @@ set(THIRDPARTY_SOURCES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty" CACHE PATH
   "Directory for third-party sources")
 
 ## Dependencies
-find_package(Poco REQUIRED COMPONENTS Net Foundation)
+find_package(console_bridge REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(Poco REQUIRED COMPONENTS Net Foundation)
 find_package(pinocchio REQUIRED)
+find_package(tinyxml2 REQUIRED)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
@@ -91,12 +94,10 @@ add_library(franka SHARED
   src/exception.cpp
   src/gripper.cpp
   src/gripper_state.cpp
-  src/library_downloader.cpp
-  src/library_loader.cpp
+  src/joint_velocity_limits.cpp
   src/load_calculations.cpp
   src/lowpass_filter.cpp
   src/model.cpp
-  src/model_library.cpp
   src/network.cpp
   src/rate_limiting.cpp
   src/robot.cpp
@@ -105,6 +106,8 @@ add_library(franka SHARED
   src/vacuum_gripper.cpp
   src/vacuum_gripper_state.cpp
   src/robot_model.cpp
+
+  src/async_control/async_position_control_handler.cpp
 
   src/logging/cout_logging_sink.cpp
   src/logging/logger.cpp
@@ -141,6 +144,7 @@ target_include_directories(franka PUBLIC
 )
 
 target_link_libraries(franka PRIVATE
+  tinyxml2
   Poco::Foundation
   Poco::Net
   Eigen3::Eigen3
@@ -152,6 +156,11 @@ target_link_libraries(franka PUBLIC
   libfranka-common
   fmt::fmt
 )
+
+## Compile pylibfranka
+if (GENERATE_PYLIBFRANKA)
+  add_subdirectory(pylibfranka)
+endif()
 
 ## Installation
 include(GNUInstallDirs)
@@ -208,36 +217,39 @@ if(BUILD_EXAMPLES)
 endif()
 
 ## Packaging
+include(SetVersionFromGit)
+set_version_from_git(PACKAGE_VERSION PACKAGE_TAG)
+execute_process(COMMAND dpkg --print-architecture OUTPUT_VARIABLE PACKAGE_ARCH OUTPUT_STRIP_TRAILING_WHITESPACE)
+
 set(CPACK_PACKAGE_VENDOR "Franka Robotics GmbH")
 set(CPACK_GENERATOR "DEB;TGZ")
 set(CPACK_PACKAGE_VERSION ${libfranka_VERSION})
+set(CPACK_PACKAGE_FILE_NAME ${PROJECT_NAME}_${PACKAGE_TAG}_${PACKAGE_ARCH})
+set(CPACK_PACKAGE_VERSION ${PACKAGE_TAG})
+set(CPACK_PACKAGE_ARCHITECTURE ${PACKAGE_ARCH})
 set(CPACK_SYSTEM_NAME ${CMAKE_HOST_SYSTEM_PROCESSOR})
 
 # Debian versions require a dash
-set(CPACK_DEBIAN_PACKAGE_VERSION ${CPACK_PACKAGE_VERSION}-1)
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Franka Robotics GmbH")
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "libpoco-dev, libfmt-dev, libeigen3-dev")
-set(CPACK_DEBIAN_PACKAGE_CONFLICTS "ros-kinetic-libfranka, ros-melodic-libfranka, ros-noetic-libfranka, ros-foxy-libfranka, ros-humble-libfranka")
+set(CPACK_DEBIAN_PACKAGE_CONFLICTS "ros-kinetic-libfranka, ros-melodic-libfranka, ros-noetic-libfranka, ros-foxy-libfranka, ros-humble-libfranka, ros-jazzy-libfranka")
 include(CPack)
 
 ## Tools
 file(GLOB_RECURSE SOURCES
   src/*.cpp
   examples/*.cpp
-  common/*.cpp
 )
 file(GLOB_RECURSE HEADERS
   include/*.h
   src/*.h
   examples/*.h
-  common/*.h
 )
 file(GLOB_RECURSE TEST_FILES
   test/*.h
   test/*.cpp
 )
 file(GLOB_RECURSE TIDY_IGNORED_FILES
-  src/libfcimodels.h
 )
 
 find_program(CLANG_FORMAT_PROG clang-format DOC "'clang-format' executable")
@@ -262,9 +274,6 @@ find_program(CLANG_TIDY_PROG clang-tidy DOC "'clang-tidy' executable")
 if(CLANG_TIDY_PROG)
   # Build JSON string for clang-tidy's line filter
   set(TIDY_FILES ${SOURCES} ${HEADERS})
-  foreach(ignored_file ${TIDY_IGNORED_FILES})
-    list(REMOVE_ITEM TIDY_FILES ${ignored_file})
-  endforeach()
   string(REPLACE ";" "\"},{\"name\":\"" TIDY_LINE_FILTER "${TIDY_FILES}")
   set(TIDY_LINE_FILTER "[{\"name\":\"${TIDY_LINE_FILTER}\"}]")
 
