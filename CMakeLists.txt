@@ -52,7 +52,9 @@ find_package(console_bridge REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Poco REQUIRED COMPONENTS Net Foundation)
 find_package(pinocchio REQUIRED)
-find_package(tinyxml2 REQUIRED)
+# find_package(tinyxml2 REQUIRED) OZHAN : see https://github.com/frankarobotics/libfranka/issues/216
+find_package(TinyXML2 REQUIRED)
+
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
@@ -217,8 +219,8 @@ if(BUILD_EXAMPLES)
 endif()
 
 ## Packaging
-include(SetVersionFromGit)
-set_version_from_git(PACKAGE_VERSION PACKAGE_TAG)
+# include(SetVersionFromGit) OZHAN: Removed to avoid dependency on git in docker builds
+# set_version_from_git(PACKAGE_VERSION PACKAGE_TAG)
 execute_process(COMMAND dpkg --print-architecture OUTPUT_VARIABLE PACKAGE_ARCH OUTPUT_STRIP_TRAILING_WHITESPACE)
 
 set(CPACK_PACKAGE_VENDOR "Franka Robotics GmbH")
