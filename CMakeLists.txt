@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.11)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-set(libfranka_VERSION 0.18.1)
+set(libfranka_VERSION 0.18.2)
 
 project(libfranka
   VERSION ${libfranka_VERSION}
@@ -52,9 +52,7 @@ find_package(console_bridge REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Poco REQUIRED COMPONENTS Net Foundation)
 find_package(pinocchio REQUIRED)
-# find_package(tinyxml2 REQUIRED) OZHAN : see https://github.com/frankarobotics/libfranka/issues/216
 find_package(TinyXML2 REQUIRED)
-
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
@@ -146,7 +144,7 @@ target_include_directories(franka PUBLIC
 )
 
 target_link_libraries(franka PRIVATE
-  tinyxml2
+  TinyXML2::TinyXML2
   Poco::Foundation
   Poco::Net
   Eigen3::Eigen3
