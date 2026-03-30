@@ -71,7 +71,12 @@ Robot::Impl::Impl(std::unique_ptr<Network> network, size_t log_size, RealtimeCon
 
   auto get_robot_model =
       this->executeCommand<research_interface::robot::GetRobotModel, GetRobotModelResult>();
-  joint_velocity_limits_config_ = JointVelocityLimitsConfig(get_robot_model.robot_model_urdf);
+  robot_model_urdf_ = get_robot_model.robot_model_urdf;
+  is_mobile_robot_ = isMobileRobotUrdf(robot_model_urdf_);
+
+  if (!is_mobile_robot_) {
+    joint_velocity_limits_config_ = JointVelocityLimitsConfig(robot_model_urdf_);
+  }
 }
 
 RobotState Robot::Impl::updateMotion(
@@ -144,7 +149,10 @@ research_interface::robot::RobotCommand Robot::Impl::sendRobotCommand(
     return robot_command;
   }
 
-  robot_command.message_id = message_id_;
+  {
+    std::lock_guard<std::mutex> lock(message_id_mutex_);
+    robot_command.message_id = message_id_;
+  }
   if (motion_command.has_value()) {
     if (current_move_motion_generator_mode_ ==
             research_interface::robot::MotionGeneratorMode::kIdle ||
@@ -182,7 +190,12 @@ research_interface::robot::RobotCommand Robot::Impl::sendRobotCommand(
 
 research_interface::robot::RobotState Robot::Impl::receiveRobotState() {
   research_interface::robot::RobotState latest_accepted_state;
-  latest_accepted_state.message_id = message_id_;
+  auto last_message_id = 0U;
+  {
+    std::lock_guard<std::mutex> lock(message_id_mutex_);
+    latest_accepted_state.message_id = message_id_;
+    last_message_id = message_id_;
+  }
 
   // If states are already available on the socket, use the one with the most recent message ID.
   research_interface::robot::RobotState received_state{};
@@ -193,7 +206,7 @@ research_interface::robot::RobotState Robot::Impl::receiveRobotState() {
   }
 
   // If there was no valid state on the socket, we need to wait.
-  while (latest_accepted_state.message_id == message_id_) {
+  while (latest_accepted_state.message_id == last_message_id) {
     received_state = network_->udpBlockingReceive<decltype(received_state)>();
     if (received_state.message_id > latest_accepted_state.message_id) {
       latest_accepted_state = received_state;
@@ -208,11 +221,23 @@ void Robot::Impl::updateState(const research_interface::robot::RobotState& robot
   robot_mode_ = robot_state.robot_mode;
   motion_generator_mode_ = robot_state.motion_generator_mode;
   controller_mode_ = robot_state.controller_mode;
-  message_id_ = robot_state.message_id;
+
+  {
+    std::lock_guard<std::mutex> lock(message_id_mutex_);
+    message_id_ = robot_state.message_id;
+  }
 }
 
 Robot::ServerVersion Robot::Impl::serverVersion() const noexcept {
   return ri_version_;
+}
+
+bool Robot::Impl::isMobileRobot() const noexcept {
+  return is_mobile_robot_;
+}
+
+const std::string& Robot::Impl::robotModelUrdf() const noexcept {
+  return robot_model_urdf_;
 }
 
 bool Robot::Impl::motionGeneratorRunning() const noexcept {
@@ -454,7 +479,7 @@ void Robot::Impl::cancelMotion(uint32_t motion_id) {
   }
 
   research_interface::robot::RobotState robot_state;
-  do {
+  do {  // NOLINT(cppcoreguidelines-avoid-do-while)
     robot_state = receiveRobotState();
   } while (motionGeneratorRunning() || controllerRunning());
 

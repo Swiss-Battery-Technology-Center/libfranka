@@ -182,9 +182,6 @@ void Robot::read(std::function<bool(const RobotState&)> read_callback) {
 }
 
 RobotState Robot::readOnce() {
-  std::unique_lock<std::mutex> control_lock(control_mutex_, std::try_to_lock);
-  assertOwningLock(control_lock);
-
   return impl_->readOnce();
 }
 
@@ -341,7 +338,16 @@ void Robot::stop() {
   impl_->executeCommand<research_interface::robot::StopMove>();
 }
 
+bool Robot::isMobileRobot() const noexcept {
+  return impl_->isMobileRobot();
+}
+
 Model Robot::loadModel() {
+  if (impl_->isMobileRobot()) {
+    throw InvalidOperationException(
+        "libfranka: loadModel() is not available for mobile robots. "
+        "Use franka::MobileModel with the URDF from getRobotModel() instead.");
+  }
   return impl_->loadModel(getRobotModel());
 }
 
@@ -349,7 +355,7 @@ Model Robot::loadModel(std::unique_ptr<RobotModelBase> robot_model) {
   return impl_->loadModel(std::move(robot_model));
 }
 
-Robot::Robot(std::shared_ptr<Impl> robot_impl) : impl_(std::move(robot_impl)){};
+Robot::Robot(std::shared_ptr<Impl> robot_impl) : impl_(std::move(robot_impl)) {};
 
 template std::unique_ptr<ActiveControlBase> Robot::startControl<JointVelocities>(
     const research_interface::robot::Move::ControllerMode& controller_type);

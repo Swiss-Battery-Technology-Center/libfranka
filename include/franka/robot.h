@@ -10,7 +10,6 @@
 #include <franka/control_types.h>
 #include <franka/duration.h>
 #include <franka/lowpass_filter.h>
-#include <franka/robot_model_base.h>
 #include <franka/robot_state.h>
 #include <research_interface/robot/service_types.h>
 #include <franka/commands/get_robot_model_command.hpp>
@@ -22,7 +21,7 @@
 namespace franka {
 
 class Model;
-
+class RobotModelBase;
 class ActiveControlBase;
 
 /**
@@ -780,11 +779,22 @@ class Robot {
    */
 
   /**
+   * Returns whether the connected robot is a mobile robot (TMR).
+   *
+   * This is detected at connection time from the robot's URDF.
+   *
+   * @return true if the robot is a mobile robot, false if it is an arm robot.
+   */
+  bool isMobileRobot() const noexcept;
+
+  /**
    * Loads the model library from the robot.
    *
    * @return Model instance.
    *
    * @throw ModelException if the model library cannot be loaded.
+   * @throw InvalidOperationException if called on a mobile robot. Use
+   * franka::MobileModel with the URDF from getRobotModel() instead.
    * @throw NetworkException if the connection is lost, e.g. after a timeout.
    */
   Model loadModel();

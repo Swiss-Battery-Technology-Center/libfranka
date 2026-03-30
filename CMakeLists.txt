@@ -1,8 +1,8 @@
-cmake_minimum_required(VERSION 3.11)
+cmake_minimum_required(VERSION 3.16)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-set(libfranka_VERSION 0.18.2)
+set(libfranka_VERSION 0.21.1)
 
 project(libfranka
   VERSION ${libfranka_VERSION}
@@ -75,6 +75,9 @@ if(BUILD_COVERAGE)
   set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --coverage")
 endif()
 
+# Suppress false positive warnings about string operations (aka GetRobotModel)
+add_compile_options(-Wno-stringop-overflow -Wno-array-bounds)
+
 ## Load dependencies
 include(FetchFMT)
 
@@ -106,6 +109,8 @@ add_library(franka SHARED
   src/vacuum_gripper.cpp
   src/vacuum_gripper_state.cpp
   src/robot_model.cpp
+  src/urdf_robot_type.cpp
+  src/mobile_model.cpp
 
   src/async_control/async_position_control_handler.cpp
 
@@ -157,6 +162,7 @@ target_link_libraries(franka PUBLIC
   fmt::fmt
 )
 
+
 ## Compile pylibfranka
 if (GENERATE_PYLIBFRANKA)
   add_subdirectory(pylibfranka)
@@ -205,7 +211,7 @@ install(EXPORT FrankaTargets
 # Ignore find_package(Franka) in subprojects.
 set(FRANKA_IS_FOUND TRUE)
 
-option(BUILD_TESTS "Build tests" ON)
+option(BUILD_TESTS "Build tests" OFF)
 if(BUILD_TESTS)
   enable_testing()
   add_subdirectory(test)
@@ -217,14 +223,29 @@ if(BUILD_EXAMPLES)
 endif()
 
 ## Packaging
-# include(SetVersionFromGit) OZHAN: Removed to avoid dependency on git in docker builds
-# set_version_from_git(PACKAGE_VERSION PACKAGE_TAG)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+  message(STATUS ".git directory found, setting version from latest git tag")
+  include(SetVersionFromGit)
+  set_version_from_git(PACKAGE_VERSION PACKAGE_TAG)
+else()
+  message(STATUS "No .git directory found, using version from CMakeLists.txt")
+  set(PACKAGE_VERSION ${PROJECT_VERSION})
+  set(PACKAGE_TAG ${PROJECT_VERSION})
+endif()
+message(STATUS "${PROJECT_NAME} version: ${PACKAGE_VERSION}, Package tag: ${PACKAGE_TAG}")
+
+# Get architecture
 execute_process(COMMAND dpkg --print-architecture OUTPUT_VARIABLE PACKAGE_ARCH OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+# Get Ubuntu codename (focal, jammy, noble)
+execute_process(COMMAND lsb_release -cs OUTPUT_VARIABLE UBUNTU_CODENAME OUTPUT_STRIP_TRAILING_WHITESPACE)
 
 set(CPACK_PACKAGE_VENDOR "Franka Robotics GmbH")
 set(CPACK_GENERATOR "DEB;TGZ")
 set(CPACK_PACKAGE_VERSION ${libfranka_VERSION})
-set(CPACK_PACKAGE_FILE_NAME ${PROJECT_NAME}_${PACKAGE_TAG}_${PACKAGE_ARCH})
+
+# Updated filename format: libfranka_VERSION_CODENAME_ARCH.deb
+set(CPACK_PACKAGE_FILE_NAME ${PROJECT_NAME}_${PACKAGE_TAG}_${UBUNTU_CODENAME}_${PACKAGE_ARCH})
 set(CPACK_PACKAGE_VERSION ${PACKAGE_TAG})
 set(CPACK_PACKAGE_ARCHITECTURE ${PACKAGE_ARCH})
 set(CPACK_SYSTEM_NAME ${CMAKE_HOST_SYSTEM_PROCESSOR})
@@ -277,16 +298,32 @@ if(CLANG_TIDY_PROG)
   string(REPLACE ";" "\"},{\"name\":\"" TIDY_LINE_FILTER "${TIDY_FILES}")
   set(TIDY_LINE_FILTER "[{\"name\":\"${TIDY_LINE_FILTER}\"}]")
 
+  # Disable noisy checks reported in tidy summary
+  # - misc-include-cleaner: requires direct include of providing headers
+  # - performance-avoid-endl: prefer \n over std::endl (OK in examples)
+  # - misc-const-correctness: suggests const qualifiers for locals
+  set(CLANG_TIDY_DISABLED_CHECKS "-misc-include-cleaner,-performance-avoid-endl,-misc-const-correctness,-readability-redundant-member-init")
+
   add_custom_target(tidy
     COMMAND ${CLANG_TIDY_PROG} -p=${CMAKE_BINARY_DIR}
-                               -line-filter=${TIDY_LINE_FILTER} ${SOURCES}
+                               -quiet
+                               -line-filter=${TIDY_LINE_FILTER}
+                               -checks=${CLANG_TIDY_DISABLED_CHECKS}
+                               --extra-arg=-Wno-unknown-warning-option
+                               --extra-arg=-Wno-unused-command-line-argument
+                               ${SOURCES}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Running clang-tidy"
     VERBATIM
   )
   add_custom_target(check-tidy
     COMMAND scripts/fail-on-output.sh ${CLANG_TIDY_PROG} -p=${CMAKE_BINARY_DIR}
-                                      -line-filter=${TIDY_LINE_FILTER} ${SOURCES}
+                                      -quiet
+                                      -line-filter=${TIDY_LINE_FILTER}
+                                      -checks=${CLANG_TIDY_DISABLED_CHECKS}
+                                      --extra-arg=-Wno-unknown-warning-option
+                                      --extra-arg=-Wno-unused-command-line-argument
+                                      ${SOURCES}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Running clang-tidy"
     VERBATIM

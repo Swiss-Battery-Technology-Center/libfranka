@@ -3,21 +3,24 @@
 #pragma once
 
 #include <chrono>
+#include <mutex>
 #include <sstream>
 #include <type_traits>
 
 #include <franka/joint_velocity_limits.h>
 #include <franka/model.h>
 #include <franka/robot.h>
-#include <franka/robot_model_base.h>
+#include <franka/commands/get_robot_model_command.hpp>
+
 #include <research_interface/robot/rbk_types.h>
 #include <research_interface/robot/service_traits.h>
 #include <research_interface/robot/service_types.h>
 
-#include "franka/commands/get_robot_model_command.hpp"
 #include "logging/robot_state_logger.hpp"
 #include "network.h"
 #include "robot_control.h"
+#include "robot_model_base.h"
+#include "urdf_robot_type.h"
 
 namespace franka {
 
@@ -190,6 +193,16 @@ class Robot::Impl : public RobotControl {
   ServerVersion serverVersion() const noexcept;
 
   /**
+   * @return true if the connected robot is a mobile robot (TMR).
+   */
+  bool isMobileRobot() const noexcept;
+
+  /**
+   * @return the URDF model string fetched at connection time.
+   */
+  const std::string& robotModelUrdf() const noexcept;
+
+  /**
    * Finishes a running torque-control
    *
    * @param motion_id the id of the running control process
@@ -238,6 +251,7 @@ class Robot::Impl : public RobotControl {
   bool controllerRunning() const noexcept;
 
  private:
+  mutable std::mutex message_id_mutex_;
   RobotState current_state_;
 
   template <typename MotionGeneratorType>
@@ -316,27 +330,22 @@ class Robot::Impl : public RobotControl {
   research_interface::robot::RobotState receiveRobotState();
   void updateState(const research_interface::robot::RobotState& robot_state);
 
-  std::unique_ptr<Network> network_;  // NOLINT(readability-identifier-naming)
-
-  RobotStateLogger logger_;  // NOLINT(readability-identifier-naming)
-
+  std::unique_ptr<Network> network_;
+  RobotStateLogger logger_;
   const RealtimeConfig realtime_config_;  // NOLINT(readability-identifier-naming)
-  uint16_t ri_version_;                   // NOLINT(readability-identifier-naming)
+  uint16_t ri_version_;
 
-  research_interface::robot::RobotMode robot_mode_ =  // NOLINT(readability-identifier-naming)
-      research_interface::robot::RobotMode::kOther;
-  research_interface::robot::MotionGeneratorMode
-      motion_generator_mode_;  // NOLINT(readability-identifier-naming)
-  research_interface::robot::MotionGeneratorMode
-      current_move_motion_generator_mode_ =  // NOLINT(readability-identifier-naming)
+  research_interface::robot::RobotMode robot_mode_ = research_interface::robot::RobotMode::kOther;
+  research_interface::robot::MotionGeneratorMode motion_generator_mode_;
+  research_interface::robot::MotionGeneratorMode current_move_motion_generator_mode_ =
       research_interface::robot::MotionGeneratorMode::kIdle;
-  research_interface::robot::ControllerMode
-      controller_mode_ =  // NOLINT(readability-identifier-naming)
+  research_interface::robot::ControllerMode controller_mode_ =
       research_interface::robot::ControllerMode::kOther;
-  research_interface::robot::ControllerMode
-      current_move_controller_mode_;                        // NOLINT(readability-identifier-naming)
-  uint64_t message_id_;                                     // NOLINT(readability-identifier-naming)
-  JointVelocityLimitsConfig joint_velocity_limits_config_;  // NOLINT(readability-identifier-naming)
+  research_interface::robot::ControllerMode current_move_controller_mode_;
+  uint64_t message_id_;
+  JointVelocityLimitsConfig joint_velocity_limits_config_;
+  bool is_mobile_robot_{false};
+  std::string robot_model_urdf_;
 };
 
 template <>

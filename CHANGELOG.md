@@ -1,6 +1,70 @@
 # CHANGELOG
 
-All notable changes to libfranka and pylibfranka will be documented in this file.
+All notable changes to libfranka in this file.
+
+## [0.21.1]
+### libfranka - C++
+- Fix package version
+
+## [0.21.0]
+### libfranka - C++
+- Add `franka::MobileModel` class for mobile robot forward kinematics (swerve drive module poses via Pinocchio).
+- `franka::Model` now rejects mobile robot URDFs with a `ModelException`; use `franka::MobileModel` instead.
+- `Robot::loadModel()` throws `InvalidOperationException` for mobile robots; use `Robot::getRobotModel()` with `MobileModel` directly.
+- chore: disabled test building by default
+
+## [0.20.5]
+### libfranka - C++
+- fix: Sometimes the PTP motion could get stuck in 'idle' after reaching the goal while doing async PTP motions
+- feat: updated cmake_minimum_required to v3.16
+- fix: jenkins pipeline updated for internal usage
+- fix: removed `franka/robot_model.h` header for pinocchio dependency leak in public interface.
+
+## [0.20.4]
+### libfranka - C++
+- fix: valgrind will not report as error reachable-type memleaks from gtest (see https://github.com/google/googletest/issues/4109)
+- fix: patch segfault in case active control has been resetted by someone else (see franka_hardware)
+- feat: do not pick git tag if not a git repo, fallback to cmakelists version, cleanup link dependencies
+
+### pylibfranka - Python
+- fix: patch runtime error for implicitly converted vector<double> to list[float]
+
+## [0.20.3]
+### libfranka - C++
+- Disable TSAN tests for ASRL problems with gcc.
+
+## [0.20.2]
+### libfranka - C++
+- Fix the github workflow to push all the debian packages from 20.4, 22.04 and 24.04
+### pylibfranka - Python
+#### Added
+- Automated publishing to PyPI via GitHub Actions workflow. When a version tag is pushed, the workflow automatically builds wheels for Python 3.9, 3.10, 3.11, and 3.12, and publishes them to PyPI. Users can now install pylibfranka directly from PyPI using `pip install pylibfranka`.
+- Fix the pylibfranka pybind error with std::nullopt
+
+## [0.20.1]
+
+### libfranka - C++
+
+- Fixed tinyxml2 dependency for ros users using `rosdep install`
+
+## [0.20.0]
+### libfranka - C++
+#### Changed
+- Hotfix to avoid torques discontinuity false positives due to robot state float precision change (was again reverted).
+- Breaking change: Fixed a wrong torque discontinuity trigger by reverting the float change within the robot state back to doubles.
+
+### pylibfranka - Python
+#### Added
+- Async control python bindings
+- Async joint positions control example from C++.
+
+## [0.19.0]
+### libfranka - C++
+#### Changed
+- To support franka_ros2, we added an option for the async position control to base the `getFeedback` function on a robot state received via `franka_hardware` instead of querying the robot directly.
+- Format libfranka debian package to inlclude ubuntu code name and arch: libfranka_VERSION_CODENAME_ARCH.deb
+- Added build containers to support Ubuntu 22.04 and 24.04
+
 
 ## [0.18.2]
 Requires Franka Research 3 System Version >= 5.9.0
@@ -14,7 +78,6 @@ Requires Franka Research 3 System Version >= 5.9.0
 
 #### Fixed
 - Fixed a compile issue with TinyXML2 dependency (see [github](https://github.com/frankarobotics/libfranka/issues/215))
-
 
 ### pylibfranka - Python
 #### Added

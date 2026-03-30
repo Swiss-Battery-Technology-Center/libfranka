@@ -1,13 +1,13 @@
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 ## Google Test
-set(GTEST_LIBRARIES gtest gmock gmock_main)
+set(GTEST_LIBRARIES 
+  GTest::gtest 
+  GTest::gmock 
+  GTest::gmock_main
+)
 
 include(SetupGoogleTest)
-
-foreach(lib ${GTEST_LIBRARIES})
-  target_compile_options(${lib} PUBLIC -Wno-deprecated-copy)
-endforeach()
 
 set(TEST_OUTPUT_DIR ${PROJECT_BINARY_DIR}/test_results)
 set(TEST_DEPENDENCIES
@@ -51,6 +51,8 @@ add_executable(run_all_tests
   logging/logging_tests.cpp
   logging/robot_state_logger_tests.cpp
   joint_velocity_limits_tests.cpp
+  mobile_model_tests.cpp
+  urdf_robot_type_tests.cpp
 
   async_control/async_position_control_tests.cpp
 )
@@ -100,7 +102,11 @@ get_target_property(TESTS run_all_tests SOURCES)
 set(ASan_FLAGS -g -O1 -fsanitize=address)
 set(UBSan_FLAGS -g -O1 -fsanitize=undefined -fno-sanitize=alignment -fno-sanitize-recover=undefined)
 set(TSan_FLAGS -g -O1 -fsanitize=thread)
-set(SANITIZERS ASan UBSan TSan)
+set(SANITIZERS 
+  ASan 
+  UBSan 
+  # TSan # ThreadSanitizer tests currently not supported due g++ ASLR issues on latest Linux kernel (6.5+). This is fixed with clang, consider enabling if we switch to clang
+)
 
 foreach(sanitizer ${SANITIZERS})
   set(sanitizer_flags "${${sanitizer}_FLAGS}")
@@ -129,7 +135,11 @@ find_program(VALGRIND_PROG valgrind)
 if(VALGRIND_PROG)
   message(STATUS "Found Valgrind: ${VALGRIND_PROG}")
   add_test(NAME Valgrind
-    COMMAND ${VALGRIND_PROG} --error-exitcode=1 --track-origins=yes --
-            ./run_all_tests --gtest_output=xml:${TEST_OUTPUT_DIR}/valgrind.xml
+    COMMAND ${VALGRIND_PROG} 
+      --error-exitcode=1 
+      --track-origins=yes
+      --show-error-list=yes
+      ./run_all_tests 
+      --gtest_output=xml:${TEST_OUTPUT_DIR}/valgrind.xml
   )
 endif()

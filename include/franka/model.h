@@ -6,7 +6,6 @@
 #include <memory>
 
 #include <franka/robot.h>
-#include <franka/robot_model_base.h>
 #include <franka/robot_state.h>
 
 /**
@@ -16,10 +15,12 @@
 
 namespace franka {
 
+class RobotModelBase;
+
 /**
  * Enumerates the seven joints, the flange, and the end effector of a robot.
  */
-enum class Frame {
+enum class Frame {  // NOLINT(performance-enum-size)
   kJoint1,
   kJoint2,
   kJoint3,

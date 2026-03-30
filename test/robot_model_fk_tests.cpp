@@ -1,7 +1,8 @@
 // Copyright (c) 2024 Franka Robotics GmbH
 // Use of this source code is governed by the Apache-2.0 license, see LICENSE
-#include "franka/robot_model.h"
-#include "gtest/gtest.h"
+#include <gtest/gtest.h>
+
+#include "robot_model.h"
 #include "test_utils.h"
 
 #include <Eigen/Dense>
@@ -48,7 +49,7 @@ class RobotModelFKTest : public ::testing::Test {
                                               0, 0, 0, 1};
 
   RobotModelFKTest() {
-    std::string urdf_path = franka_test_utils::getUrdfPath(__FILE__);
+    std::string urdf_path = franka_test_utils::getArmUrdfPath(__FILE__);
     auto urdf_string = franka_test_utils::readFileToString(urdf_path);
     model = std::make_unique<franka::RobotModel>(urdf_string);
   }

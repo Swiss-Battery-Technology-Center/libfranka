@@ -37,6 +37,7 @@ constexpr double kTolNumberPacketsLost = 0.0;
  * Factor for the definition of rotational limits using the Cartesian Pose interface
  */
 constexpr double kFactorCartesianRotationPoseInterface = 0.99;
+
 /**
  * Maximum torque rate
  */
